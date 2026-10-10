@@ -72,7 +72,7 @@ main{padding:8px 16px calc(var(--tabh) + 24px);max-width:640px;margin:0 auto}
 .chev{color:var(--ink-3);flex:none}
 .chev svg{width:16px;height:16px;display:block}
 .seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:3px;gap:3px}
-.seg button{padding:7px 6px;border-radius:9px;font-size:14px;font-weight:600;color:var(--ink-2)}
+.seg button{padding:7px 2px;border-radius:9px;font-size:13px;font-weight:600;color:var(--ink-2)}
 .seg button[aria-pressed=true]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(22,33,62,.14)}
 
 /* ---------- score dots ---------- */
@@ -178,7 +178,7 @@ main{padding:8px 16px calc(var(--tabh) + 24px);max-width:640px;margin:0 auto}
 .note{background:var(--surface);border-radius:var(--r-m);padding:14px;font-size:15px}
 .note + .note{margin-top:8px}
 .note h4{margin:0 0 4px;font-size:13px;color:var(--ink-2);font-weight:600}
-.note.good h4{color:var(--ok)} .note.tip h4{color:var(--blue)}
+.focus{margin-top:10px}.focus .fi{display:flex;gap:10px;align-items:flex-start}.focus .fi + .fi{margin-top:10px}.focus .n{flex:none;width:24px;height:24px;border-radius:50%;background:var(--blue);color:#fff;font:800 13px var(--f-num);display:grid;place-items:center;margin-top:1px}.focus b{display:block;font-size:15px}.focus .fd{font-size:14px;color:var(--ink-2);line-height:1.4}.kv6{grid-template-columns:repeat(3,1fr);margin-top:8px}.kv6 b{font-size:17px}.note.good h4{color:var(--ok)} .note.tip h4{color:var(--blue)}
 
 /* ---------- tools ---------- */
 .slider{width:100%;appearance:none;-webkit-appearance:none;height:34px;background:transparent}
@@ -241,6 +241,7 @@ details.how p{font-size:13.5px;color:var(--ink-2);margin:8px 0 0}
   <!-- VANDAAG -->
   <section class="view" id="v-today" aria-label="Vandaag">
     <div class="next" id="nextcard"></div>
+    <div id="focus"></div>
 
     <div class="sec"><h2>Jouw route</h2><button class="link" data-goto="schedule">Schema</button></div>
     <div class="panel">
@@ -285,7 +286,7 @@ details.how p{font-size:13.5px;color:var(--ink-2);margin:8px 0 0}
   <!-- VOORTGANG -->
   <section class="view" id="v-progress" aria-label="Voortgang">
     <div class="seg" id="progseg" role="group" aria-label="Grafiek">
-      <button data-m="km" aria-pressed="true">Kilometers</button><button data-m="pace">Tempo</button><button data-m="score">Cijfers</button>
+      <button data-m="km" aria-pressed="true">Kilometers</button><button data-m="pace">Tempo</button><button data-m="score">Cijfers</button><button data-m="cad">Cadans</button><button data-m="eff">Efficiëntie</button>
     </div>
     <div class="panel" style="margin-top:12px">
       <div id="progtitle" style="font-weight:700;margin-bottom:2px"></div>
@@ -432,6 +433,12 @@ details.how p{font-size:13.5px;color:var(--ink-2);margin:8px 0 0}
     }
     return null;
   }
+  function focusBlock(nr) {
+    if (!nr || !nr.focus || !nr.focus.length) return null;
+    const n = el('div', 'note focus'); n.append(el('h4', '', 'Let hierop bij deze run'));
+    nr.focus.forEach((f, i) => { const r = el('div', 'fi'); r.append(el('span', 'n', String(i + 1))); const t = el('div'); t.append(el('b', '', f.t), el('div', 'fd', f.d)); r.append(t); n.append(r); });
+    return n;
+  }
   function renderToday() {
     const nx = nextTask(); const nr = (D.next_run || [])[0] || {};
     const c = $('#nextcard'); c.replaceChildren();
@@ -449,6 +456,7 @@ details.how p{font-size:13.5px;color:var(--ink-2);margin:8px 0 0}
       const g = el('div', 'go'); g.append(el('span', '', fmtWeekRange(nx.p)));
       const b = el('button', '', 'Bekijk uitleg'); b.addEventListener('click', () => openTask(nx.p.wk, nx.k)); g.append(b); c.append(g);
     }
+    { const fb = $('#focus'); fb.replaceChildren(); const nrr = (D.next_run || [])[0]; if (nx && nrr && nrr.label && nrr.label.includes('Wk ' + nx.p.wk) && nrr.label.includes('Run ' + nx.k)) { const b2 = focusBlock(nrr); if (b2) { b2.style.marginTop = '12px'; fb.append(b2); } } }
     drawRoute();
     const km = done().reduce((s, r) => s + r.distance_km, 0);
     $('#kmdone').textContent = nf(km);
@@ -618,7 +626,7 @@ details.how p{font-size:13.5px;color:var(--ink-2);margin:8px 0 0}
         .forEach(([v, l]) => { const d = el('div'); d.append(el('b', '', v), el('span', '', l)); kv.append(d); }); b.append(kv);
       const how = el('div', 'note'); how.style.marginTop = '10px'; how.append(el('h4', '', 'Zo pak je hem aan'), el('div', '', advice(t, k))); b.append(how);
       const nr = (D.next_run || [])[0];
-      if (nr && nr.label === 'Wk ' + wk + ' - Run ' + k) { const n = el('div', 'note tip'); n.append(el('h4', '', 'Tempo-indicatie'), el('div', '', nr.pace + ' bij ' + nr.hr.toLowerCase() + '. Laat de hartslag leidend zijn, niet het tempo.')); b.append(n); }
+      if (nr && nr.label === 'Wk ' + wk + ' - Run ' + k) { const n = el('div', 'note tip'); n.append(el('h4', '', 'Tempo-indicatie'), el('div', '', nr.pace + ' bij ' + nr.hr.toLowerCase() + '. Laat de hartslag leidend zijn, niet het tempo.')); b.append(n); const fb = focusBlock(nr); if (fb) { fb.style.marginTop = '8px'; b.append(fb); } }
     });
   }
   function advice(t, k) { const s = t.toLowerCase();
@@ -642,6 +650,17 @@ details.how p{font-size:13.5px;color:var(--ink-2);margin:8px 0 0}
       [[nf(r.distance_km, 2) + ' km', 'afstand'], [fmtHM(r.minutes).replace(/^0:/, '') + (r.minutes < 60 ? ' min' : ' u'), 'tijd'], [r.pace + '/km', 'tempo'],
        [String(r.avg_hr), 'gem. hartslag'], [String(r.max_hr), 'max hartslag'], [String(r.score), 'cijfer']]
         .forEach(([v, l]) => { const d = el('div'); d.append(el('b', '', v), el('span', '', l)); kv.append(d); }); b.append(kv);
+      const st = r.stats;
+      if (st) {
+        const t0 = el('div', 'sec'); t0.append(el('h2', '', 'Looptechniek en conditie')); t0.style.marginTop = '14px'; b.append(t0);
+        const k2 = el('div', 'kv kv6');
+        [[String(st.cad), 'stappen per min'], [nf(st.stride, 2) + ' m', 'staplengte'], [nf(st.mpb, 2) + ' m', 'per hartslag'],
+         [nf(st.drift, 1) + '%', 'hartslagdrift'], ['+' + st.start_fast + '%', 'start te snel'], [st.zones.easy + '%', 'in zone 140-149']]
+          .forEach(([v, l]) => { const d = el('div'); d.append(el('b', '', v.replace('.', ',')), el('span', '', l)); k2.append(d); }); b.append(k2);
+        const ex = el('div', 'hint'); ex.style.lineHeight = '1.45';
+        ex.textContent = 'Drift: hoeveel efficiënter je de eerste helft liep dan de tweede (na de eerste 10 min). Onder 5% is goed. Per hartslag: meters per hartslagslag, hoger is fitter. Start te snel: hoeveel sneller kilometer 1 was dan je gemiddelde.';
+        b.append(ex);
+      }
       const p1 = el('div', 'panel'); p1.style.marginTop = '12px'; p1.append(el('div', '', 'Hartslag')); p1.firstChild.style.fontWeight = 700;
       const hc = el('div', 'chart'); p1.append(hc, el('div', 'hint', 'Sleep met je vinger over de lijn.')); b.append(p1);
       const pts = (D.run_points || []).filter((x) => x.run_id === id);
@@ -727,6 +746,23 @@ details.how p{font-size:13.5px;color:var(--ink-2);margin:8px 0 0}
       svg.on('pointerdown pointermove', (ev) => { const [mx] = d3.pointer(ev); const i = Math.max(0, Math.min(rows.length - 1, Math.floor((mx - m.l) / x.step()))); const r = rows[i];
         hl.style('display', null).attr('x', x(r.wk) - 2).attr('width', x.bandwidth() + 4).attr('y', m.t - 4).attr('height', H - m.b - m.t + 4);
         place(x(r.wk) + x.bandwidth() / 2, 'Week ' + r.wk + ': ' + nf(r.run) + ' van ~' + nf(r.plan) + ' km'); });
+    } else if (progMode === 'cad' || progMode === 'eff') {
+      const cad = progMode === 'cad';
+      $('#progtitle').textContent = cad ? 'Cadans' : 'Efficiëntie';
+      $('#progsub').textContent = cad ? 'Stappen per minuut. Meer korte stappen is vaak zachter voor je knieën en schenen.' : 'Meter per hartslagslag. Stijgt dit, dan loop je meer bij dezelfde hartslag: je wordt fitter.';
+      const rows = done().filter((r) => r.stats).sort((a, b) => (a.date < b.date ? -1 : 1)).map((r) => ({ ...r, d: new Date(r.date + 'T12:00:00'), v: cad ? r.stats.cad : r.stats.mpb }));
+      if (!rows.length) { box.append(el('div', 'empty', 'Nog geen gegevens.')); return; }
+      const x = d3.scaleTime().domain(rows.length > 1 ? d3.extent(rows, (r) => r.d) : [new Date(rows[0].d - 864e5 * 7), new Date(+rows[0].d + 864e5 * 7)]).range([m.l + 10, W - m.r - 10]);
+      const lo = d3.min(rows, (r) => r.v), hi = d3.max(rows, (r) => r.v), pad = cad ? 4 : 0.06;
+      const y = d3.scaleLinear().domain([Math.min(lo - pad, cad ? 160 : lo - pad), Math.max(hi + pad, cad ? 172 : hi + pad)]).nice().range([H - m.b, m.t]);
+      svg.append('g').attr('class', 'grid').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(4).tickFormat((d) => cad ? d : String(d.toFixed(2)).replace('.', ',')).tickSize(-(W - m.l - m.r))).call((g) => g.selectAll('text').attr('x', -6));
+      svg.append('g').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(4).tickFormat((d) => d.getDate() + ' ' + MON[d.getMonth()]).tickSize(0)).call((g) => g.select('.domain').remove()).call((g) => g.selectAll('text').attr('dy', 12));
+      if (cad) svg.append('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y(170)).attr('y2', y(170)).attr('stroke', 'var(--ok)').attr('stroke-dasharray', '4 4');
+      if (rows.length > 1) svg.append('path').datum(rows).attr('fill', 'none').attr('stroke', 'var(--blue)').attr('stroke-width', 2.2).attr('d', d3.line().x((r) => x(r.d)).y((r) => y(r.v)));
+      svg.selectAll('circle').data(rows).join('circle').attr('cx', (r) => x(r.d)).attr('cy', (r) => y(r.v)).attr('r', 6).attr('fill', 'var(--blue)').attr('stroke', 'var(--surface)').attr('stroke-width', 2.5);
+      const bis = d3.bisector((r) => r.d).center;
+      svg.on('pointerdown pointermove', (ev) => { const [mx] = d3.pointer(ev); const r = rows[bis(rows, x.invert(mx))]; if (r) place(x(r.d), fmtDate(r.date) + ': ' + (cad ? r.stats.cad + ' per min, staplengte ' + nf(r.stats.stride, 2) + ' m' : nf(r.stats.mpb, 2) + ' m per slag, drift ' + nf(r.stats.drift, 1) + '%')); });
+      svg.on('click', (ev) => { const [mx] = d3.pointer(ev); const r = rows[bis(rows, x.invert(mx))]; if (r) openRun(r.id); });
     } else if (progMode === 'pace') {
       $('#progtitle').textContent = 'Tempo bij rustige runs'; $('#progsub').textContent = 'Runs met gemiddelde hartslag tot 152. Lager is sneller: dan wordt je basis beter.';
       const rows = done().filter((r) => r.avg_hr && r.avg_hr <= 152).sort((a, b) => (a.date < b.date ? -1 : 1)).map((r) => ({ ...r, d: new Date(r.date + 'T12:00:00') }));
