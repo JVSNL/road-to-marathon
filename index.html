@@ -1,0 +1,931 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Road to Marathon</title>
+<meta name="description" content="Trainingsdashboard richting de marathon van 9 mei 2027.">
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Marathon">
+<meta name="theme-color" content="#16213e">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+:root{color-scheme:light dark;
+--font-anthropic-sans:-apple-system,BlinkMacSystemFont,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+--font-anthropic-serif:"New York",ui-serif,Georgia,"Times New Roman",serif;
+--color-bg:#f4f6fb;--color-panel:#ffffff;--color-fg:#16213e;--color-fg-muted:#5c6579;--color-border-line:#e2e6ef;
+--color-ok:#1f9d6b;--color-warn:#e8841a;--color-bad:#d23f45;
+--cds-chart-grid:#edf0f6;--cds-chart-axis:#c3c9d6;--cds-chart-reference:#97a1b5;--cds-chart-muted:#c8d3e8;
+--cds-text-secondary:#5c6579;--cds-surface-popover:#ffffff;--cds-border:#e2e6ef;--cds-shadow-popover:0 6px 20px rgba(22,33,62,.14);
+--cds-font-size-caption:.8125rem;--cds-font-size-body:1rem;--cds-font-size-heading:1.125rem;--cds-font-size-title:1.75rem;--cds-font-weight-medium:600;
+--cds-gap-sm:.5rem;--cds-gap-md:1rem;--cds-pad-xs:.25rem;--cds-pad-sm:.5rem;--cds-pad-md:.75rem;--cds-pad-lg:1.125rem;--cds-radius:14px;
+--cds-ease-out:cubic-bezier(.2,.8,.2,1);--cds-dur-slow:450ms}
+@media (prefers-color-scheme:dark){:root{
+--color-bg:#0e1424;--color-panel:#161e33;--color-fg:#e8ecf6;--color-fg-muted:#9aa4ba;--color-border-line:#26304a;
+--cds-chart-grid:#1f2840;--cds-chart-axis:#3a4664;--cds-chart-reference:#6b7895;--cds-chart-muted:#33405e;
+--cds-text-secondary:#9aa4ba;--cds-surface-popover:#1c2540;--cds-border:#2b3653;--cds-shadow-popover:0 6px 20px rgba(0,0,0,.45)}
+:root #mr{--mr-accent:#6ea6ff;--mr-accent-soft:#1a2742;--color-ok:#3fd18a;--color-warn:#ffa23d;--color-bad:#ff6b6b}
+:root #mr .kv{color:var(--color-fg)}}
+html,body{margin:0;background:var(--color-bg);color:var(--color-fg);-webkit-text-size-adjust:100%}
+body{padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+.dash-skeleton{min-height:6rem;background:linear-gradient(90deg,var(--cds-chart-grid),transparent,var(--cds-chart-grid));background-size:200% 100%;animation:sk 1.4s linear infinite;border-radius:var(--cds-radius)}
+@keyframes sk{to{background-position:-200% 0}}
+</style>
+<script src="vendor/d3.min.js"></script>
+<script>
+window.dash = (() => {
+  const IDS = ['plan','runs','run_points','run_laps','run_scores','zones','next_run','shoes'];
+  const store = {}; const calcs = {}; const subs = []; let params = {};
+  IDS.forEach((id) => { store[id] = { status: 'loading', data: [], columns: [] }; });
+  const emit = () => subs.forEach((fn) => { try { fn(); } catch (e) { console.error(e); } });
+  let loading = null;
+  const load = () => {
+    if (loading) return loading;
+    IDS.forEach((id) => { if (store[id].status === 'ok') store[id].refreshing = true; });
+    loading = Promise.all(IDS.map((id) =>
+      fetch('data/' + id + '.json?t=' + Date.now(), { cache: 'no-store' })
+        .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then((d) => { const rows = Array.isArray(d) ? d : (d.rows || d.data || []);
+          store[id] = { status: 'ok', data: rows, columns: rows.length ? Object.keys(rows[0]) : [], refreshing: false }; })
+        .catch((e) => { store[id] = { status: 'error', data: [], columns: [], message: String(e) }; })
+    )).then(() => { loading = null; emit(); });
+    return loading;
+  };
+  const api = {
+    colors: ['var(--mr-accent)','#1f9d6b','#e8841a','#7c5cd6','#d23f45','#2aa3b8','#c2a32c','#6b7895'],
+    data(id) {
+      if (calcs[id]) {
+        const c = calcs[id]; const ins = c.inputs.map((i) => api.data(i));
+        if (ins.some((x) => x.status === 'error')) return { status: 'error', data: [], columns: [] };
+        if (ins.some((x) => x.status !== 'ok')) return { status: 'loading', data: [], columns: [] };
+        const out = c.fn(...ins.map((x) => x.data));
+        return { status: 'ok', data: out, columns: Array.isArray(out) && out.length ? Object.keys(out[0]) : [] };
+      }
+      const s = store[id] || { status: 'missing', data: [], columns: [] };
+      return Object.assign({ rows: s.data, value: s.data, meta: [] }, s);
+    },
+    onData(fn) { subs.push(fn); try { fn(); } catch (e) { console.error(e); } },
+    calc(id, o) { calcs[id] = o; },
+    loader() {},
+    refresh() { return load(); },
+    params() { return params; },
+    setParams(p) { params = Object.assign({}, params, p); emit(); },
+    resetParams() { params = {}; emit(); },
+    setLink() {},
+  };
+  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(emit, 150); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') load(); });
+  setTimeout(load, 0);
+  return api;
+})();
+</script>
+</head>
+<body>
+<div id="dash-root">
+<style>
+#mr{--mr-accent:#2f6fd6;--mr-accent-soft:#e9f0fc;--mr-navy:#16213e;--color-ok:#1f9d6b;--color-warn:#e8841a;--color-bad:#d23f45}
+@media (prefers-color-scheme:dark){:root:not([data-mode=light]) #mr{--mr-accent:#6ea6ff;--mr-accent-soft:#1a2742;--color-ok:#3fd18a;--color-warn:#ffa23d;--color-bad:#ff6b6b}}
+:root[data-mode=dark] #mr{--mr-accent:#6ea6ff;--mr-accent-soft:#1a2742;--color-ok:#3fd18a;--color-warn:#ffa23d;--color-bad:#ff6b6b}
+#mr .mark{width:2.75rem;height:2.75rem;border-radius:.75rem;flex:none;box-shadow:0 2px 8px rgba(22,33,62,.25)}
+#mr .brand{display:flex;align-items:center;gap:.75rem;min-width:0}
+#mr .card.hero{background:linear-gradient(135deg,#16213e 0%,#22397a 55%,#2f6fd6 120%);border:0;color:#fff}
+#mr .hero .eyebrow{color:#a9c8ff}
+#mr .hero .goal{color:#fff}
+#mr .hero .chip{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.28);color:#fff}
+#mr .hero .count{color:#fff}
+#mr .hero .count *{color:inherit}
+#mr .card.count{background:var(--mr-accent-soft);border-color:transparent}
+#mr .count .big{color:var(--mr-accent)}
+#mr .kpis .kpi{border-top:3px solid var(--mr-accent)}
+#mr .kv{color:var(--mr-navy)}
+@media (prefers-color-scheme:dark){:root:not([data-mode=light]) #mr .kv{color:var(--color-fg)}}
+:root[data-mode=dark] #mr .kv{color:var(--color-fg)}
+#mr .card h2{color:var(--mr-accent)}
+#mr .sched .sr.cur{background:var(--mr-accent-soft);box-shadow:inset 3px 0 0 var(--mr-accent)}
+#mr .wk.cur{border-color:var(--mr-accent);box-shadow:0 0 0 1px var(--mr-accent)}
+#mr .sched .sp{background:var(--mr-accent-soft);color:var(--mr-accent)}
+#mr button.btn{border-color:var(--mr-accent);color:var(--mr-accent)}
+#mr button.btn:hover{background:var(--mr-accent);color:#fff}
+#mr{max-width:72rem;margin-inline:auto;font-family:var(--font-anthropic-sans);color:var(--color-fg);display:flex;flex-direction:column;gap:var(--cds-gap-md)}
+#mr *{box-sizing:border-box}
+#mr h1{font-family:var(--font-anthropic-serif);font-weight:400;font-size:var(--cds-font-size-title);margin:0;line-height:1.15}
+#mr .take{margin:.25rem 0 0;color:var(--color-fg-muted)}
+#mr h2{font-size:var(--cds-font-size-heading);font-weight:var(--cds-font-weight-medium);margin:0 0 .125rem}
+#mr .note{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);margin:0 0 var(--cds-gap-sm)}
+#mr .row{display:grid;gap:var(--cds-gap-md);grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr))}
+#mr .card{background:var(--color-panel);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-lg);min-width:0}
+#mr .hero{display:flex;gap:var(--cds-gap-md);align-items:center;flex-wrap:wrap}
+#mr .hero-main{flex:1;min-width:12rem}
+#mr .eyebrow{font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);text-transform:none;margin:0 0 .125rem}
+#mr .goal{font-family:var(--font-anthropic-serif);font-size:var(--cds-font-size-title);line-height:1.15;margin:0}
+#mr .chips{display:flex;flex-wrap:wrap;gap:.375rem;margin-top:var(--cds-gap-sm)}
+#mr .chip{border:1px solid var(--color-border-line);border-radius:999px;padding:.125rem .625rem;font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);background:var(--color-bg)}
+#mr .count{display:flex;flex-direction:column;justify-content:center;gap:.125rem}
+#mr .big{font-family:var(--font-anthropic-serif);font-size:3rem;line-height:1;font-variant-numeric:tabular-nums}
+#mr .kpis{display:grid;gap:var(--cds-gap-sm);grid-template-columns:repeat(auto-fit,minmax(8rem,1fr))}
+#mr .kpi{background:var(--color-panel);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-md) var(--cds-pad-lg);display:flex;flex-direction:column;gap:.25rem;min-height:5.5rem;justify-content:space-between}
+#mr .kl{font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
+#mr .kv{font-family:var(--font-anthropic-serif);font-size:var(--cds-font-size-title);line-height:1;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:.375rem}
+#mr .ku{font-family:var(--font-anthropic-sans);font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
+#mr .dot{display:inline-flex;align-items:center;justify-content:center;width:2.25rem;height:2.25rem;border-radius:50%;font-family:var(--font-anthropic-sans);font-weight:600;font-size:var(--cds-font-size-body);font-variant-numeric:tabular-nums;color:#fff;background:var(--color-border-line);flex:none;line-height:1}
+#mr .dot.sm{width:1.75rem;height:1.75rem;font-size:.75rem}
+#mr .dot.ok{background:var(--color-ok)}
+#mr .dot.warn{background:var(--color-warn)}
+#mr .dot.bad{background:var(--color-bad)}
+#mr .dot.empty{background:transparent;border:1.5px dashed var(--color-border-line);color:transparent}
+#mr .phase{margin-bottom:var(--cds-gap-md)}
+#mr .phase:last-child{margin-bottom:0}
+#mr .phase h3{font-size:var(--cds-font-size-caption);font-weight:var(--cds-font-weight-medium);color:var(--color-fg-muted);margin:0 0 .375rem}
+#mr .weeks{display:flex;flex-wrap:wrap;gap:.375rem}
+#mr .wk{border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:.375rem .5rem;display:flex;flex-direction:column;align-items:center;gap:.25rem;background:var(--color-bg);min-width:3.6rem}
+#mr .wk.cur{border-color:var(--color-fg);box-shadow:0 0 0 1px var(--color-fg)}
+#mr .wk.rest .wkn::after{content:" rust";color:var(--color-fg-muted)}
+#mr .wkn{font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+#mr .dots{display:flex;gap:.25rem}
+#mr .legend{display:flex;flex-wrap:wrap;gap:var(--cds-gap-md);font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);margin-top:var(--cds-gap-sm);align-items:center}
+#mr .legend span.i{display:inline-flex;align-items:center;gap:.375rem}
+#mr .sw{width:.75rem;height:.75rem;border-radius:3px;display:inline-block}
+#mr .chart{position:relative;min-height:260px;width:100%}
+#mr .chart svg{display:block;width:100%;height:auto;overflow:visible}
+#mr .chart text{fill:var(--color-fg-muted);font-size:11px;font-family:var(--font-anthropic-sans)}
+#mr .chart .lbl{fill:var(--color-fg);font-weight:600}
+#mr .chart .gl line{stroke:var(--cds-chart-grid)}
+#mr .chart .gl .domain{display:none}
+#mr .chart .gl text{fill:var(--color-fg-muted)}
+#mr .tip{position:absolute;pointer-events:none;background:var(--cds-surface-popover);border:1px solid var(--cds-border);border-radius:var(--cds-radius);box-shadow:var(--cds-shadow-popover);padding:var(--cds-pad-xs) var(--cds-pad-sm);font-size:var(--cds-font-size-caption);display:none;white-space:nowrap;z-index:2}
+#mr .tip .t1{color:var(--cds-text-secondary)}
+#mr .fail{display:flex;align-items:center;justify-content:center;gap:.375rem;min-height:inherit;height:100%;color:var(--color-fg-muted);font-size:var(--cds-font-size-caption)}
+#mr .fail i{width:.375rem;height:.375rem;border-radius:50%;background:var(--color-bad);display:inline-block}
+#mr .empty-note{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);margin:.5rem 0 0}
+#mr .tbl{overflow:auto;max-height:26rem}
+#mr table{border-collapse:collapse;width:100%;font-size:var(--cds-font-size-caption);font-variant-numeric:tabular-nums}
+#mr th{position:sticky;top:0;background:var(--color-panel);text-align:left;font-weight:var(--cds-font-weight-medium);color:var(--color-fg-muted);padding:.375rem .5rem;border-bottom:1px solid var(--color-border-line);white-space:nowrap}
+#mr td{padding:.375rem .5rem;border-bottom:1px solid var(--color-border-line);vertical-align:middle}
+#mr td.rv{min-width:16rem;white-space:normal}
+#mr td.num,#mr th.num{text-align:right}
+#mr .shoe{margin-top:var(--cds-gap-sm)}
+#mr .shoe .st{font-weight:var(--cds-font-weight-medium)}
+#mr .bar{position:relative;height:.75rem;border-radius:999px;background:var(--cds-chart-grid);margin:.625rem 0 1.5rem}
+#mr .bar .fill{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:var(--color-ok);min-width:.375rem}
+#mr .bar .tk{position:absolute;top:-.25rem;bottom:-.25rem;width:2px;background:var(--cds-chart-reference)}
+#mr .bar .tl{position:absolute;top:1.1rem;transform:translateX(-50%);font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);white-space:nowrap}
+#mr .bar .tl.r{transform:translateX(-100%)}
+#mr .dot.big{width:3rem;height:3rem;font-size:1.25rem}
+#mr .d-head{display:flex;gap:var(--cds-gap-md);align-items:center;margin-bottom:var(--cds-gap-sm)}
+#mr .d-t1{font-family:var(--font-anthropic-serif);font-size:var(--cds-font-size-title);line-height:1.15}
+#mr .d-t2{color:var(--color-fg-muted)}
+#mr h3.sub{font-size:var(--cds-font-size-body);font-weight:var(--cds-font-weight-medium);margin:var(--cds-gap-md) 0 .25rem}
+#mr .info p{margin:0;line-height:1.45}
+#mr .info{min-width:0}
+#mr #log tbody tr{cursor:pointer}
+#mr tr.sel td{background:var(--cds-chart-grid)}
+#mr td.neg{color:var(--color-bad);font-weight:600}
+#mr td.fin{font-weight:600}
+#mr .stools{display:flex;gap:var(--cds-gap-md);align-items:center;flex-wrap:wrap;margin-bottom:var(--cds-gap-sm)}
+#mr .btn{font:inherit;font-size:var(--cds-font-size-caption);padding:.25rem .75rem;border:1px solid var(--color-border-line);border-radius:999px;background:var(--color-bg);color:var(--color-fg);cursor:pointer}
+#mr .chk{display:inline-flex;gap:.375rem;align-items:center;font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);cursor:pointer}
+#mr .sched{container-type:inline-size;position:relative;max-height:38rem;overflow:auto;border:1px solid var(--color-border-line);border-radius:var(--cds-radius);background:var(--color-bg);min-height:8rem}
+#mr .sp{position:sticky;top:0;z-index:1;background:var(--color-panel);padding:.375rem .625rem;font-size:var(--cds-font-size-caption);font-weight:var(--cds-font-weight-medium);color:var(--color-fg-muted);border-bottom:1px solid var(--color-border-line)}
+#mr .sr{display:grid;grid-template-columns:4.25rem minmax(0,1.2fr) minmax(0,1fr) minmax(0,.8fr) 3.25rem;gap:.375rem .625rem;padding:.5rem .625rem;border-bottom:1px solid var(--color-border-line);align-items:start}
+#mr .sr.cur{background:var(--cds-chart-grid);box-shadow:inset 3px 0 0 var(--color-fg)}
+#mr .sr .wkc{display:flex;flex-direction:column;line-height:1.25}
+#mr .sr .wn{font-weight:var(--cds-font-weight-medium);white-space:nowrap}
+#mr .sr .wd{font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
+#mr .sr .run{display:flex;gap:.5rem;align-items:flex-start;min-width:0}
+#mr .sr .rt{font-size:var(--cds-font-size-caption);line-height:1.3;min-width:0}
+#mr .sr .rl{display:block;color:var(--color-fg-muted);font-size:.6875rem}
+#mr .sr .km{font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+#mr .sr .ms{grid-column:2 / -1;display:flex;gap:.375rem;flex-wrap:wrap;font-size:var(--cds-font-size-caption)}
+#mr .badge{border:1px solid var(--color-border-line);border-radius:999px;padding:.0625rem .5rem;background:var(--color-panel)}
+#mr .badge.rest{color:var(--color-fg-muted)}
+#mr .sr .run.none{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);padding-top:.375rem}
+#mr .sr .run.c .rl{color:var(--color-fg)}
+@container (max-width:44rem){
+  #mr .sr{grid-template-columns:3.75rem minmax(0,1fr) 3rem}
+  #mr .sr .run.b,#mr .sr .run.c{grid-column:2 / 4}
+  #mr .sr .run.none{display:none}
+  #mr .sr .km{grid-row:1;grid-column:3}
+}
+#mr .htop{display:flex;justify-content:space-between;align-items:center;gap:var(--cds-gap-md)}
+#mr .htop .btn{flex:none;padding:.375rem .875rem}
+#mr .htop .btn[disabled]{opacity:.6;cursor:default}
+#mr [data-dash-source-state=empty]{color:transparent}
+@media (prefers-reduced-motion:no-preference){#mr .bar .fill{transition:width var(--cds-dur-slow) var(--cds-ease-out)}}
+</style>
+
+<div id="mr">
+  <header>
+    <div class="htop"><div class="brand"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" class="mark" aria-hidden="true">
+<defs>
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0d1736"/><stop offset=".5" stop-color="#34286b"/><stop offset=".8" stop-color="#e4572e"/><stop offset="1" stop-color="#ffb35c"/></linearGradient>
+<linearGradient id="gr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a2240"/><stop offset="1" stop-color="#0a0f1f"/></linearGradient>
+<radialGradient id="sun" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#fff0b8"/><stop offset=".7" stop-color="#ffc766"/><stop offset="1" stop-color="#ff9a4d"/></radialGradient>
+<clipPath id="above"><rect x="0" y="0" width="1024" height="640"/></clipPath>
+</defs>
+<rect class="mark" aria-hidden="true" fill="url(#sky)"/>
+<rect y="640" width="1024" height="384" fill="url(#gr)"/>
+<g>
+<polygon points="34,640 34,598 82,572 196,572 222,598 222,640" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<rect x="58" y="608" width="16" height="22" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><rect x="184" y="608" width="16" height="22" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<polygon points="76,572 184,572 170,512 90,512" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<polygon points="92,512 168,512 154,404 106,404" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<line x1="98" y1="470" x2="162" y2="470" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="102" y1="440" x2="158" y2="440" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<rect x="124" y="476" width="12" height="20" rx="6" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<line x1="30" y1="512" x2="230" y2="512" stroke="#ffe9c4" stroke-width="6" stroke-linecap="round"/>
+<line x1="30" y1="498" x2="230" y2="498" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<line x1="38" y1="498" x2="38" y2="512" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="54" y1="498" x2="54" y2="512" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="70" y1="498" x2="70" y2="512" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="86" y1="498" x2="86" y2="512" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="102" y1="498" x2="102" y2="512" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="118" y1="498" x2="118" y2="512" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="134" y1="498" x2="134" y2="512" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="150" y1="498" x2="150" y2="512" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="166" y1="498" x2="166" y2="512" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="182" y1="498" x2="182" y2="512" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="198" y1="498" x2="198" y2="512" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="214" y1="498" x2="214" y2="512" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<line x1="34" y1="512" x2="84" y2="556" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="226" y1="512" x2="178" y2="556" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<path d="M100,406 Q130,362 160,406 Z" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<line x1="152" y1="394" x2="222" y2="498" stroke="#ffe9c4" stroke-width="5" stroke-linecap="round"/>
+<circle cx="218" cy="486" r="9" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<g transform="translate(118,396)"><g transform="rotate(-55)"><line x1="0" y1="0" x2="124" y2="0" stroke="#ffe9c4" stroke-width="7" stroke-linecap="round"/><rect x="30" y="-2" width="94" height="20" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="42" y1="-2" x2="42" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="58" y1="-2" x2="58" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="74" y1="-2" x2="74" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="90" y1="-2" x2="90" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="106" y1="-2" x2="106" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="122" y1="-2" x2="122" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></g><g transform="rotate(35)"><line x1="0" y1="0" x2="124" y2="0" stroke="#ffe9c4" stroke-width="7" stroke-linecap="round"/><rect x="30" y="-2" width="94" height="20" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="42" y1="-2" x2="42" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="58" y1="-2" x2="58" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="74" y1="-2" x2="74" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="90" y1="-2" x2="90" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="106" y1="-2" x2="106" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="122" y1="-2" x2="122" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></g><g transform="rotate(125)"><line x1="0" y1="0" x2="124" y2="0" stroke="#ffe9c4" stroke-width="7" stroke-linecap="round"/><rect x="30" y="-2" width="94" height="20" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="42" y1="-2" x2="42" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="58" y1="-2" x2="58" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="74" y1="-2" x2="74" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="90" y1="-2" x2="90" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="106" y1="-2" x2="106" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="122" y1="-2" x2="122" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></g><g transform="rotate(215)"><line x1="0" y1="0" x2="124" y2="0" stroke="#ffe9c4" stroke-width="7" stroke-linecap="round"/><rect x="30" y="-2" width="94" height="20" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="42" y1="-2" x2="42" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="58" y1="-2" x2="58" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="74" y1="-2" x2="74" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="90" y1="-2" x2="90" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="106" y1="-2" x2="106" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="122" y1="-2" x2="122" y2="18" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></g></g>
+<circle cx="118" cy="396" r="9" fill="#ffe9c4"/>
+</g><g>
+<polygon points="236,640 236,548 300,548 300,640" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<polygon points="232,548 268,516 304,548" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<rect x="244" y="470" width="40" height="170" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<polygon points="240,470 264,408 288,470" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<line x1="264" y1="408" x2="264" y2="388" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<path d="M256,520 v-26 a8,8 0 0 1 16,0 v26 z" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<rect x="300" y="500" width="112" height="140" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<polygon points="300,500 356,410 412,500" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<path d="M330,630 V548 Q330,508 356,494 Q382,508 382,548 V630 Z" fill="#0d1028" stroke="#ffe9c4" stroke-width="3"/>
+<line x1="356" y1="498" x2="356" y2="630" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="343" y1="520" x2="343" y2="630" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="369" y1="520" x2="369" y2="630" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<circle cx="356" cy="470" r="11" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<rect x="292" y="470" width="12" height="170" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/><polygon points="290,470 298,446 306,470" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<rect x="408" y="470" width="12" height="170" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/><polygon points="406,470 414,446 422,470" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+</g><g>
+<rect x="490" y="540" width="200" height="100" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<path d="M556,640 V596 a34,34 0 0 1 68,0 V640 Z" fill="#0d1028" stroke="#ffe9c4" stroke-width="3"/>
+<line x1="486" y1="540" x2="694" y2="540" stroke="#ffe9c4" stroke-width="6" stroke-linecap="round"/>
+<line x1="490" y1="560" x2="690" y2="560" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<rect x="506" y="578" width="22" height="30" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><rect x="652" y="578" width="22" height="30" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<rect x="540" y="500" width="100" height="40" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<path d="M540,500 Q590,476 640,500" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<rect x="562" y="452" width="56" height="48" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<line x1="576" y1="452" x2="576" y2="500" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="590" y1="452" x2="590" y2="500" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="604" y1="452" x2="604" y2="500" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<line x1="556" y1="452" x2="624" y2="452" stroke="#ffe9c4" stroke-width="5" stroke-linecap="round"/>
+<path d="M564,452 Q564,412 590,404 Q616,412 616,452 Z" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<line x1="590" y1="404" x2="590" y2="374" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="590" cy="384" r="5" fill="#ffe9c4"/>
+</g><g transform="translate(150,0)"><g>
+<circle cx="626" cy="612" r="22" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/><circle cx="646" cy="598" r="18" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<circle cx="818" cy="610" r="22" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/><circle cx="798" cy="598" r="17" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<path d="M604,640 C640,604 676,588 720,586 C764,588 800,604 840,640 Z" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<rect x="652" y="528" width="12" height="16" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/><rect x="672" y="525" width="12" height="16" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/><rect x="692" y="523" width="12" height="16" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/><rect x="712" y="522" width="12" height="16" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/><rect x="732" y="522" width="12" height="16" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/><rect x="752" y="523" width="12" height="16" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/><rect x="772" y="526" width="12" height="16" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<path d="M650,540 Q720,556 790,540 L790,588 Q720,604 650,588 Z" stroke="#ffe9c4" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" fill="#1d1a47" fill-opacity=".94"/>
+<path d="M708,598 V576 a12,12 0 0 1 24,0 V598 Z" fill="#0d1028" stroke="#ffe9c4" stroke-width="3"/>
+<line x1="672" y1="566" x2="672" y2="574" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="768" y1="566" x2="768" y2="574" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<path d="M720,640 L716,628 L724,616 L716,606 L720,598" stroke="#ffe9c4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</g></g>
+<rect x="0" y="800" width="1024" height="140" fill="#10182d"/>
+<line x1="0" y1="800" x2="1024" y2="800" stroke="#ff9d5c" stroke-width="7"/>
+<line x1="0" y1="940" x2="1024" y2="940" stroke="#ff9d5c" stroke-width="7"/>
+<rect x="-20" y="865" width="44" height="10" rx="3" fill="#fff4dc"/><rect x="64" y="865" width="44" height="10" rx="3" fill="#fff4dc"/><rect x="148" y="865" width="44" height="10" rx="3" fill="#fff4dc"/><rect x="232" y="865" width="44" height="10" rx="3" fill="#fff4dc"/><rect x="316" y="865" width="44" height="10" rx="3" fill="#fff4dc"/><rect x="400" y="865" width="44" height="10" rx="3" fill="#fff4dc"/><rect x="484" y="865" width="44" height="10" rx="3" fill="#fff4dc"/><rect x="568" y="865" width="44" height="10" rx="3" fill="#fff4dc"/><rect x="652" y="865" width="44" height="10" rx="3" fill="#fff4dc"/><rect x="736" y="865" width="44" height="10" rx="3" fill="#fff4dc"/><rect x="820" y="865" width="44" height="10" rx="3" fill="#fff4dc"/><rect x="904" y="865" width="44" height="10" rx="3" fill="#fff4dc"/><rect x="988" y="865" width="44" height="10" rx="3" fill="#fff4dc"/>
+<rect x="866" y="800" width="44" height="140" fill="#fff"/><rect x="868" y="800" width="20" height="20" fill="#fff"/><rect x="888" y="800" width="20" height="20" fill="#10182d"/><rect x="868" y="820" width="20" height="20" fill="#10182d"/><rect x="888" y="820" width="20" height="20" fill="#fff"/><rect x="868" y="840" width="20" height="20" fill="#fff"/><rect x="888" y="840" width="20" height="20" fill="#10182d"/><rect x="868" y="860" width="20" height="20" fill="#10182d"/><rect x="888" y="860" width="20" height="20" fill="#fff"/><rect x="868" y="880" width="20" height="20" fill="#fff"/><rect x="888" y="880" width="20" height="20" fill="#10182d"/><rect x="868" y="900" width="20" height="20" fill="#10182d"/><rect x="888" y="900" width="20" height="20" fill="#fff"/><rect x="868" y="920" width="20" height="20" fill="#fff"/><rect x="888" y="920" width="20" height="20" fill="#10182d"/>
+
+<g transform="translate(-60,-50)">
+<ellipse cx="505" cy="962" rx="78" ry="10" fill="#000" opacity=".35"/>
+<path d="M520,770 L478,800 L456,842" stroke="#fff4dc" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<path d="M500,852 L470,904 L418,888" stroke="#fff4dc" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<path d="M500,852 L520,768" stroke="#e4572e" stroke-width="34" stroke-linecap="round"/>
+<path d="M500,852 L552,892 L540,952 L566,956" stroke="#fff4dc" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<path d="M520,772 L560,804 L594,782" stroke="#fff4dc" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<circle cx="534" cy="728" r="27" fill="#fff4dc"/>
+</g>
+
+
+</svg><h1>Marathon 9 mei 2027</h1></div><button type="button" class="btn" id="vernieuw">Vernieuw</button></div>
+    <p class="take">Eerste marathon: zeker onder de vier uur, en richting 3:30 als het kan. Elke run beoordeeld tegen het schema.</p>
+  </header>
+
+  <section class="row" id="top">
+    <div class="card hero" id="next">
+      <div class="hero-main">
+        <p class="eyebrow">Volgende run</p>
+        <p class="goal"><span data-source="next_run" data-field="label" data-row="0">—</span></p>
+        <p class="goal" style="margin-top:.25rem"><span data-source="next_run" data-field="goal" data-row="0">—</span></p>
+        <div class="chips">
+          <span class="chip" data-source="next_run" data-field="when" data-row="0">—</span>
+          <span class="chip" data-source="next_run" data-field="hr" data-row="0">—</span>
+          <span class="chip" data-source="next_run" data-field="duration" data-row="0">—</span>
+          <span class="chip" data-source="next_run" data-field="pace" data-row="0">—</span>
+        </div>
+      </div>
+    </div>
+    <div class="card count">
+      <p class="eyebrow">Tot de marathon</p>
+      <div class="big" id="mr-days">—</div>
+      <div class="kl" style="color:var(--color-fg-muted)">dagen · <span id="mr-week">—</span></div>
+    </div>
+  </section>
+
+  <section class="kpis" id="kpis">
+    <div class="kpi"><span class="kl">Runs gedaan</span><span class="kv"><span data-source="summary" data-field="runs_done" data-row="0">—</span></span></div>
+    <div class="kpi"><span class="kl">Totaal gelopen</span><span class="kv"><span data-source="summary" data-field="total_km" data-row="0">—</span><span class="ku">km</span></span></div>
+    <div class="kpi"><span class="kl">Gemiddelde score</span><span class="kv"><span data-source="summary" data-field="avg_score" data-row="0">—</span><span class="ku">van 10</span></span></div>
+    <div class="kpi"><span class="kl">Laatste run</span><span class="kv"><span class="dot empty" id="last-dot" data-source="summary" data-field="last_score" data-row="0">—</span></span></div>
+  </section>
+
+  <section class="card" id="sched-card">
+    <h2>Trainingsschema</h2>
+    <p class="note">Alle 31 weken in één overzicht: Run A (kwaliteit), Run B (lange loop) en in 10 weken een extra rustige Run C. De huidige week is gemarkeerd. Een bolletje met cijfer verschijnt zodra je de run hebt gedaan, klik erop voor de details.</p>
+    <div class="stools">
+      <button type="button" class="btn" id="sched-now">Naar huidige week</button>
+      <label class="chk"><input type="checkbox" id="sched-future"> Alleen komende weken</label>
+    </div>
+    <div class="sched dash-skeleton" id="sched" data-source="plan runs"></div>
+    <div class="legend">
+      <span class="i"><span class="dot sm ok">8</span> 8-10 goed</span>
+      <span class="i"><span class="dot sm warn">6</span> 5-7 matig</span>
+      <span class="i"><span class="dot sm bad">3</span> 1-4 slecht of gemist</span>
+      <span class="i"><span class="dot sm empty">0</span> nog te doen</span>
+    </div>
+  </section>
+
+  <section class="card" id="detail">
+    <h2>Run in detail</h2>
+    <p class="note">Klik op een bolletje in het schema of op een run in de runlog om hem hier te bekijken.</p>
+    <p class="empty-note" id="d-empty" hidden>Nog geen run om te tonen.</p>
+    <div id="d-body" hidden>
+      <div class="d-head">
+        <span class="dot big" id="d-dot">—</span>
+        <div>
+          <div class="d-t1">Wk <span id="d-wk">—</span> · Run <span id="d-run">—</span> · <span id="d-date">—</span></div>
+          <div class="d-t2" id="d-plan">—</div>
+        </div>
+      </div>
+      <div class="chips">
+        <span class="chip"><span id="d-km">—</span> km</span>
+        <span class="chip"><span id="d-min">—</span> min</span>
+        <span class="chip"><span id="d-pace">—</span> /km</span>
+        <span class="chip">gem. <span id="d-avg">—</span> bpm</span>
+        <span class="chip">max <span id="d-max">—</span> bpm</span>
+      </div>
+      <div class="row">
+        <div class="info">
+          <h3 class="sub">Hartslagverloop</h3>
+          <div class="chart dash-skeleton" id="d-hr" style="min-height:220px" data-source="run_points runs"></div>
+        </div>
+        <div class="info">
+          <h3 class="sub">Tempo per kilometer</h3>
+          <div class="chart dash-skeleton" id="d-lap" style="min-height:220px" data-source="run_laps"></div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="info">
+          <h3 class="sub">Waarom dit cijfer</h3>
+          <div class="tbl" style="max-height:none">
+            <table id="why" data-source="run_scores" data-row-key="key">
+              <thead><tr><th data-field="factor">Onderdeel</th><th data-field="points" class="num">Punten</th><th data-field="note">Toelichting</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="info">
+          <h3 class="sub">Wat ging goed</h3>
+          <p id="d-good">—</p>
+          <h3 class="sub">Verbeterpunt</h3>
+          <p id="d-tip">—</p>
+          <h3 class="sub">Ten opzichte van de vorige run</h3>
+          <p id="d-vs">—</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="row">
+    <div class="card">
+      <h2>Kilometers per week</h2>
+      <p class="note">Geschat uit het schema (grijs) naast wat je liep (kleur).</p>
+      <div class="chart dash-skeleton" id="chart-km" data-source="week_km"></div>
+      <div class="legend"><span class="i"><span class="sw" style="background:var(--cds-chart-muted)"></span>Plan (schatting)</span><span class="i"><span class="sw" id="sw-act"></span>Gelopen</span></div>
+    </div>
+    <div class="card">
+      <h2>Tempo per run</h2>
+      <p class="note">Rustige runs op hartslag. Sneller bij dezelfde hartslag is vooruitgang.</p>
+      <div class="chart dash-skeleton" id="chart-pace" data-source="runs"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Runlog</h2>
+    <p class="note">Laatste run bovenaan.</p>
+    <div class="tbl">
+      <table id="log" data-source="runs" data-row-key="id">
+        <thead><tr>
+          <th data-field="date">Datum</th><th data-field="wk" class="num">Wk</th><th data-field="run">Run</th><th data-field="plan">Taak</th>
+          <th data-field="distance_km" class="num">km</th><th data-field="minutes" class="num">min</th><th data-field="pace" class="num">Tempo</th>
+          <th data-field="avg_hr" class="num">Gem. hf</th><th data-field="max_hr" class="num">Max hf</th><th data-field="score">Score</th><th data-field="review">Oordeel</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="row">
+    <div class="card">
+      <h2>Schoenen</h2>
+      <p class="note">Kilometers op je schoenen tegenover de controle en het einde van de levensduur.</p>
+      <div id="shoes" class="chart dash-skeleton" style="min-height:6rem" data-source="shoes"></div>
+    </div>
+    <div class="card">
+      <h2>Hartslagzones lopen</h2>
+      <p class="note">Hartslag leidt, tempo volgt. Zones kunnen na de test in week 9 omhoog.</p>
+      <div class="tbl">
+        <table id="zt" data-source="zones" data-row-key="zone">
+          <thead><tr><th data-field="zone">Zone</th><th data-field="bpm">bpm</th><th data-field="use">Gebruik</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const START = new Date('2026-10-05T00:00:00Z');
+  const RACE = new Date('2027-05-09T00:00:00Z');
+  const $ = (s) => document.querySelector('#mr ' + s);
+  const cls = (s) => (s >= 8 ? 'ok' : s >= 5 ? 'warn' : 'bad');
+  const fmtPace = (sec) => Math.floor(sec / 60) + ':' + String(Math.round(sec % 60)).padStart(2, '0');
+  const utcDay = (s) => new Date(s + 'T00:00:00Z');
+  const selectedId = () => {
+    const rs = dash.data('runs');
+    if (rs.status !== 'ok' || !rs.data.length) return null;
+    const p = dash.params().run;
+    if (rs.data.some((r) => r.id === p)) return p;
+    return [...rs.data].sort((a, b) => (a.date < b.date ? 1 : -1))[0].id;
+  };
+  const pick = (id) => {
+    dash.setParams({ run: id });
+    const d = document.getElementById('detail');
+    if (d) d.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  const msg = (text) => { const p = document.createElement('p'); p.className = 'empty-note'; p.textContent = text; return p; };
+  const hrCls = (hr) => (hr <= 150 ? 'ok' : hr <= 156 ? 'warn' : 'bad');
+
+  dash.calc('week_km', {
+    inputs: ['plan', 'runs'],
+    title: 'Weekkilometers plan en gelopen',
+    description: 'Geschatte weekkilometers uit het schema naast de gelopen kilometers per week.',
+    fn: (plan, runs) => plan.map((p) => ({
+      wk: p.wk,
+      phase: p.phase,
+      plan_km: p.est_week_km,
+      actual_km: Math.round(runs.filter((r) => r.wk === p.wk && r.status === 'gedaan').reduce((s, r) => s + r.distance_km, 0) * 10) / 10,
+    })),
+  });
+
+  dash.calc('summary', {
+    inputs: ['runs'],
+    title: 'Samenvatting runs',
+    description: 'Aantal gelopen runs, totaal kilometers, gemiddelde score en score van de laatste run.',
+    fn: (runs) => {
+      const done = runs.filter((r) => r.status === 'gedaan');
+      const km = done.reduce((s, r) => s + r.distance_km, 0);
+      const sc = runs.reduce((s, r) => s + r.score, 0);
+      const last = [...runs].sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+      return [{
+        runs_done: done.length,
+        total_km: Math.round(km * 10) / 10,
+        avg_score: runs.length ? Math.round((sc / runs.length) * 10) / 10 : 0,
+        last_score: last ? last.score : 0,
+      }];
+    },
+  });
+
+  const failLine = () => {
+    const d = document.createElement('div');
+    d.className = 'fail';
+    const i = document.createElement('i');
+    const s = document.createElement('span');
+    s.textContent = 'Failed to load';
+    d.append(i, s);
+    return d;
+  };
+  const guard = (box, id) => {
+    const g = dash.data(id);
+    if (g.status === 'ok') { box.classList.remove('dash-skeleton'); return g.data; }
+    if (g.status === 'loading') { box.classList.add('dash-skeleton'); box.replaceChildren(); return null; }
+    box.classList.remove('dash-skeleton');
+    box.replaceChildren(failLine());
+    return null;
+  };
+  const tipFor = (box) => {
+    const t = document.createElement('div');
+    t.className = 'tip';
+    box.appendChild(t);
+    return (ev, lines) => {
+      if (!lines) { t.style.display = 'none'; return; }
+      t.replaceChildren(...lines.map((l, i) => { const d = document.createElement('div'); if (i === 0) d.className = 't1'; d.textContent = l; return d; }));
+      t.style.display = 'block';
+      const [px, py] = d3.pointer(ev, box);
+      t.style.left = Math.max(0, Math.min(px + 12, box.clientWidth - t.offsetWidth)) + 'px';
+      t.style.top = Math.max(0, py - t.offsetHeight - 8) + 'px';
+    };
+  };
+  const dotEl = (score, small, ds) => {
+    const d = document.createElement('span');
+    d.className = 'dot' + (small ? ' sm' : '') + ' ' + (score == null ? 'empty' : cls(score));
+    d.textContent = score == null ? '0' : String(score);
+    if (ds) Object.entries(ds).forEach(([k, v]) => d.setAttribute('data-' + k, v));
+    return d;
+  };
+
+  function fillMarks() {
+    document.querySelectorAll('#mr [data-source][data-field][data-row]').forEach((el) => {
+      if (el.closest('table')) return;
+      const g = dash.data(el.dataset.source);
+      if (g.status !== 'ok') return;
+      const row = g.data[Number(el.dataset.row)];
+      el.textContent = row && row[el.dataset.field] != null ? String(row[el.dataset.field]) : '—';
+    });
+    const lastDot = $('#last-dot');
+    const s = dash.data('summary');
+    const r = dash.data('runs');
+    if (s.status === 'ok' && r.status === 'ok' && r.data.length) {
+      lastDot.className = 'dot ' + cls(s.data[0].last_score);
+    } else {
+      lastDot.className = 'dot empty';
+    }
+  }
+
+  function header() {
+    const now = new Date();
+    const days = Math.max(0, Math.ceil((RACE - now) / 86400000));
+    const wk = Math.min(31, Math.max(1, Math.floor((now - START) / 604800000) + 1));
+    $('#mr-days').textContent = String(days);
+    $('#mr-week').textContent = 'week ' + wk + ' van 31';
+    $('#sw-act').style.background = 'var(--mr-accent)';
+  }
+
+  let futureOnly = false;
+  let schedScrolled = false;
+  const curWeek = () => Math.min(31, Math.max(1, Math.floor((new Date() - START) / 604800000) + 1));
+  const toCur = () => {
+    const box = $('#sched');
+    const el = box.querySelector('.sr.cur');
+    if (!el) return;
+    box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top - 48;
+  };
+
+  function drawSchedule() {
+    const box = $('#sched');
+    const plan = dash.data('plan');
+    const runs = dash.data('runs');
+    if (plan.status !== 'ok' || runs.status !== 'ok') {
+      box.classList.toggle('dash-skeleton', plan.status === 'loading' || runs.status === 'loading');
+      if (plan.status === 'error' || runs.status === 'error') box.replaceChildren(failLine());
+      return;
+    }
+    box.classList.remove('dash-skeleton');
+    const byKey = new Map(runs.data.map((r) => [r.wk + '|' + r.run, r]));
+    const cur = curWeek();
+    const mk = (tag, cn, field, p, text) => {
+      const e = document.createElement(tag);
+      if (cn) e.className = cn;
+      e.setAttribute('data-source', 'plan');
+      e.setAttribute('data-field', field);
+      e.setAttribute('data-where', 'wk=' + p.wk);
+      e.textContent = String(text);
+      return e;
+    };
+    const frag = document.createDocumentFragment();
+    d3.groups(plan.data, (d) => d.phase).forEach(([name, weeks]) => {
+      const vis = weeks.filter((p) => !futureOnly || p.wk >= cur);
+      if (!vis.length) return;
+      const h = document.createElement('div');
+      h.className = 'sp';
+      h.appendChild(mk('span', '', 'phase', vis[0], name));
+      frag.appendChild(h);
+      vis.forEach((p) => {
+        const row = document.createElement('div');
+        row.className = 'sr' + (p.wk === cur ? ' cur' : '');
+        const wkc = document.createElement('div');
+        wkc.className = 'wkc';
+        const wn = document.createElement('span');
+        wn.className = 'wn';
+        wn.append('wk ', mk('span', '', 'wk', p, p.wk));
+        wkc.append(wn, mk('span', 'wd', 'label', p, p.label));
+        const cell = (k, field, text) => {
+          const c = document.createElement('div');
+          c.className = 'run' + (k === 'B' ? ' b' : k === 'C' ? ' c' : '');
+          const r = byKey.get(p.wk + '|' + k);
+          const dot = r
+            ? dotEl(r.score, true, { source: 'runs', field: 'score', where: 'wk=' + p.wk + '&run=' + k })
+            : dotEl(null, true);
+          if (r) { dot.style.cursor = 'pointer'; dot.addEventListener('click', () => pick(r.id)); }
+          const t = document.createElement('span');
+          t.className = 'rt';
+          const rl = document.createElement('span');
+          rl.className = 'rl';
+          rl.textContent = 'Run ' + k + (k === 'A' ? ' · doordeweeks' : k === 'B' ? ' · weekend' : ' · extra, rustig');
+          t.append(rl, mk('span', '', field, p, text));
+          c.append(dot, t);
+          return c;
+        };
+        const km = document.createElement('div');
+        km.className = 'km';
+        km.append('~', mk('span', '', 'est_week_km', p, p.est_week_km), ' km');
+        let cc;
+        if (p.c_plan) cc = cell('C', 'c_plan', p.c_plan);
+        else { cc = document.createElement('div'); cc.className = 'run none'; cc.textContent = '–'; }
+        row.append(wkc, cell('A', 'a_plan', p.a_plan), cell('B', 'b_plan', p.b_plan), cc, km);
+        if (p.is_rest || p.milestone) {
+          const ms = document.createElement('div');
+          ms.className = 'ms';
+          if (p.is_rest) { const b = document.createElement('span'); b.className = 'badge rest'; b.textContent = 'rustweek'; ms.appendChild(b); }
+          if (p.milestone) ms.appendChild(mk('span', 'badge', 'milestone', p, p.milestone));
+          row.appendChild(ms);
+        }
+        frag.appendChild(row);
+      });
+    });
+    box.replaceChildren(frag);
+    if (!schedScrolled && !futureOnly) { schedScrolled = true; toCur(); }
+  }
+
+  $('#sched-now').addEventListener('click', () => {
+    if (futureOnly) { futureOnly = false; $('#sched-future').checked = false; drawSchedule(); }
+    toCur();
+  });
+  $('#sched-future').addEventListener('change', (ev) => { futureOnly = ev.target.checked; drawSchedule(); });
+
+  function drawKm() {
+    const box = $('#chart-km');
+    const rows = guard(box, 'week_km');
+    if (!rows) return;
+    const W = Math.max(box.clientWidth, 260), H = 260, m = { l: 34, r: 6, t: 12, b: 40 };
+    const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('width', '100%');
+    const x = d3.scaleBand().domain(rows.map((d) => d.wk)).range([m.l, W - m.r]).padding(0.28);
+    const ymax = d3.max(rows, (d) => Math.max(d.plan_km, d.actual_km)) || 10;
+    const y = d3.scaleLinear().domain([0, ymax]).nice().range([H - m.b, m.t]);
+    const half = (x.step() - x.bandwidth()) / 2;
+    d3.groups(rows, (d) => d.phase).forEach(([name, g], i) => {
+      const x0 = x(g[0].wk) - half, x1 = x(g[g.length - 1].wk) + x.bandwidth() + half;
+      svg.append('rect').attr('x', x0).attr('y', m.t).attr('width', x1 - x0).attr('height', H - m.b - m.t)
+        .style('fill', 'var(--cds-chart-grid)').attr('opacity', i % 2 ? 0.3 : 0.1);
+      if (x1 - x0 > 56) svg.append('text').attr('x', (x0 + x1) / 2).attr('y', H - 6).attr('text-anchor', 'middle').text(name);
+    });
+    svg.append('g').attr('class', 'gl').attr('transform', `translate(${m.l},0)`)
+      .call(d3.axisLeft(y).ticks(4).tickSize(-(W - m.l - m.r)))
+      .call((g) => g.selectAll('text').attr('font-size', null).attr('font-family', null));
+    rows.forEach((d) => {
+      svg.append('rect').attr('x', x(d.wk)).attr('width', x.bandwidth()).attr('y', y(d.plan_km)).attr('height', y(0) - y(d.plan_km))
+        .attr('rx', 3).style('fill', 'var(--cds-chart-muted)').attr('opacity', 0.55);
+      if (d.actual_km > 0) {
+        svg.append('rect').attr('x', x(d.wk) + x.bandwidth() * 0.15).attr('width', x.bandwidth() * 0.7).attr('y', y(d.actual_km))
+          .attr('height', y(0) - y(d.actual_km)).attr('rx', 3).style('fill', 'var(--mr-accent)');
+      }
+      if (d.wk === 1 || d.wk % 5 === 0 || d.wk === 31) {
+        svg.append('text').attr('x', x(d.wk) + x.bandwidth() / 2).attr('y', H - m.b + 14).attr('text-anchor', 'middle').text(d.wk);
+      }
+    });
+    box.replaceChildren(svg.node());
+    const tip = tipFor(box);
+    svg.selectAll('rect.hit').data(rows).join('rect').attr('class', 'hit')
+      .attr('x', (d) => x(d.wk) - half).attr('width', x.step()).attr('y', m.t).attr('height', H - m.b - m.t).attr('fill', 'transparent')
+      .on('mousemove', (ev, d) => tip(ev, ['Week ' + d.wk + ' · ' + d.phase, 'Plan ~' + d.plan_km + ' km', 'Gelopen ' + d.actual_km + ' km']))
+      .on('mouseleave', (ev) => tip(ev, null));
+  }
+
+  function drawPace() {
+    const box = $('#chart-pace');
+    const all = guard(box, 'runs');
+    if (!all) return;
+    const rows = all.filter((r) => r.status === 'gedaan' && r.pace_sec).sort((a, b) => (a.date < b.date ? -1 : 1));
+    if (!rows.length) { box.replaceChildren(); const p = document.createElement('p'); p.className = 'empty-note'; p.textContent = 'Nog geen runs. Zodra er een run is verschijnt hier je tempo.'; box.appendChild(p); return; }
+    const W = Math.max(box.clientWidth, 260), H = 260, m = { l: 40, r: 56, t: 14, b: 28 };
+    const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('width', '100%');
+    const x = d3.scaleUtc([START, RACE], [m.l, W - m.r]);
+    const lo = d3.min(rows, (d) => d.pace_sec) - 30, hi = d3.max(rows, (d) => d.pace_sec) + 30;
+    const y = d3.scaleLinear([hi, lo], [H - m.b, m.t]);
+    svg.append('g').attr('class', 'gl').attr('transform', `translate(${m.l},0)`)
+      .call(d3.axisLeft(y).ticks(4).tickSize(-(W - m.l - m.r)).tickFormat(fmtPace))
+      .call((g) => g.selectAll('text').attr('font-size', null).attr('font-family', null));
+    svg.append('g').attr('transform', `translate(0,${H - m.b})`)
+      .call(d3.axisBottom(x).ticks(Math.max(3, Math.floor(W / 90))).tickFormat(d3.utcFormat('%b')).tickSize(4))
+      .call((g) => { g.selectAll('text').attr('font-size', null).attr('font-family', null); g.select('.domain').style('stroke', 'var(--cds-chart-axis)'); g.selectAll('line').style('stroke', 'var(--cds-chart-axis)'); });
+    const line = d3.line().x((d) => x(utcDay(d.date))).y((d) => y(d.pace_sec));
+    if (rows.length > 1) svg.append('path').datum(rows).attr('d', line).attr('fill', 'none').style('stroke', 'var(--mr-accent)').attr('stroke-width', 2).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+    const pts = svg.selectAll('circle').data(rows).join('circle')
+      .attr('cx', (d) => x(utcDay(d.date))).attr('cy', (d) => y(d.pace_sec)).attr('r', 6)
+      .style('fill', (d) => 'var(--color-' + cls(d.score) + ')').style('stroke', 'var(--color-panel)').attr('stroke-width', 2);
+    const last = rows[rows.length - 1];
+    svg.append('text').attr('class', 'lbl').attr('x', x(utcDay(last.date)) + 12).attr('y', y(last.pace_sec) + 4).text(last.pace + '/km');
+    box.replaceChildren(svg.node());
+    const tip = tipFor(box);
+    pts.on('mousemove', (ev, d) => tip(ev, [d.date + ' · wk ' + d.wk + ' run ' + d.run, d.pace + '/km', 'Gem. hartslag ' + d.avg_hr + ' bpm']))
+      .on('mouseleave', (ev) => tip(ev, null));
+  }
+
+  function fillTable(sel, id, cols, sorter) {
+    const tb = $(sel + ' tbody');
+    const g = dash.data(id);
+    if (g.status !== 'ok') { tb.replaceChildren(); return; }
+    const rows = sorter ? [...g.data].sort(sorter) : g.data;
+    tb.replaceChildren(...rows.map((r) => {
+      const tr = document.createElement('tr');
+      tr.dataset.key = String(r[sel === '#log' ? 'id' : 'zone']);
+      if (sel === '#log') {
+        tr.addEventListener('click', () => pick(r.id));
+        if (r.id === selectedId()) tr.classList.add('sel');
+      }
+      cols.forEach((c) => {
+        const td = document.createElement('td');
+        const v = r[c];
+        if (c === 'score') {
+          td.appendChild(dotEl(v, true));
+        } else {
+          td.textContent = v == null || v === '' ? '–' : String(v);
+          if (['wk', 'distance_km', 'minutes', 'pace', 'avg_hr', 'max_hr'].includes(c)) td.className = 'num';
+          if (c === 'review') td.className = 'rv';
+        }
+        tr.appendChild(td);
+      });
+      return tr;
+    }));
+  }
+
+  function drawShoes() {
+    const box = $('#shoes');
+    const rows = guard(box, 'shoes');
+    if (!rows) return;
+    box.replaceChildren(...rows.map((r) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'shoe';
+      const t = document.createElement('div');
+      t.className = 'st';
+      t.textContent = r.pair + ' · ' + r.km_done + ' km';
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      const fill = document.createElement('div');
+      fill.className = 'fill';
+      fill.style.width = Math.min(100, (r.km_done / r.km_max) * 100) + '%';
+      bar.appendChild(fill);
+      [[r.km_check, 'controle ' + r.km_check + ' km', false], [r.km_max, 'einde ~' + r.km_max + ' km', true]].forEach(([km, label, right]) => {
+        const tk = document.createElement('div');
+        tk.className = 'tk';
+        tk.style.left = (km / r.km_max) * 100 + '%';
+        const tl = document.createElement('div');
+        tl.className = 'tl' + (right ? ' r' : '');
+        tl.style.left = (km / r.km_max) * 100 + '%';
+        tl.textContent = label;
+        bar.append(tk, tl);
+      });
+      const n = document.createElement('div');
+      n.className = 'note';
+      n.textContent = r.note;
+      wrap.append(t, bar, n);
+      return wrap;
+    }));
+  }
+
+  const fmtMin = (t) => Math.floor(t) + ':' + String(Math.round((t % 1) * 60) % 60).padStart(2, '0');
+
+  function drawDetailHr(id, r) {
+    const box = $('#d-hr');
+    const all = guard(box, 'run_points');
+    if (!all) return;
+    const rows = all.filter((p) => p.run_id === id);
+    if (!rows.length) { box.replaceChildren(msg('Geen hartslagdata voor deze run.')); return; }
+    const W = Math.max(box.clientWidth, 260), H = 220, m = { l: 36, r: 10, t: 10, b: 26 };
+    const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('width', '100%');
+    const x = d3.scaleLinear([0, d3.max(rows, (d) => d.t_min)], [m.l, W - m.r]);
+    const lo = Math.floor((d3.min(rows, (d) => d.hr) - 4) / 5) * 5;
+    const hi = Math.ceil((Math.max(d3.max(rows, (d) => d.hr), 156) + 4) / 5) * 5;
+    const y = d3.scaleLinear([lo, hi], [H - m.b, m.t]);
+    [[lo, 150, 'ok'], [150, 156, 'warn'], [156, hi, 'bad']].forEach(([a, b, c]) => {
+      svg.append('rect').attr('x', m.l).attr('width', W - m.l - m.r).attr('y', y(b)).attr('height', y(a) - y(b))
+        .style('fill', 'var(--color-' + c + ')').attr('opacity', 0.1);
+    });
+    svg.append('g').attr('class', 'gl').attr('transform', `translate(${m.l},0)`)
+      .call(d3.axisLeft(y).ticks(4).tickSize(-(W - m.l - m.r)))
+      .call((g) => g.selectAll('text').attr('font-size', null).attr('font-family', null));
+    svg.append('g').attr('class', 'gl').attr('transform', `translate(0,${H - m.b})`)
+      .call(d3.axisBottom(x).ticks(Math.max(3, Math.floor(W / 80))).tickFormat((d) => d + ' min').tickSize(4))
+      .call((g) => { g.selectAll('text').attr('font-size', null).attr('font-family', null); g.select('.domain').style('display', 'inline').style('stroke', 'var(--cds-chart-axis)'); });
+    svg.append('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y(150)).attr('y2', y(150))
+      .style('stroke', 'var(--cds-chart-reference)').attr('stroke-width', 1);
+    svg.append('text').attr('x', W - m.r - 2).attr('y', y(150) - 4).attr('text-anchor', 'end').text('grens 150');
+    svg.append('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y(r.avg_hr)).attr('y2', y(r.avg_hr))
+      .style('stroke', 'var(--color-fg-muted)').attr('stroke-width', 1).attr('stroke-dasharray', '4 3');
+    svg.append('text').attr('x', W - m.r - 2).attr('y', y(r.avg_hr) + 12).attr('text-anchor', 'end').text('gem. ' + r.avg_hr);
+    svg.append('path').datum(rows).attr('fill', 'none').style('stroke', 'var(--mr-accent)').attr('stroke-width', 2)
+      .attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round')
+      .attr('d', d3.line().x((d) => x(d.t_min)).y((d) => y(d.hr)));
+    svg.selectAll('circle.hi').data(rows.filter((d) => d.hr > 155)).join('circle').attr('class', 'hi')
+      .attr('cx', (d) => x(d.t_min)).attr('cy', (d) => y(d.hr)).attr('r', 3.5).style('fill', 'var(--color-bad)');
+    const foc = svg.append('circle').attr('r', 5).attr('display', 'none').style('fill', 'var(--mr-accent)').style('stroke', 'var(--color-panel)').attr('stroke-width', 2);
+    box.replaceChildren(svg.node());
+    const tip = tipFor(box);
+    const bis = d3.bisector((d) => d.t_min).center;
+    svg.append('rect').attr('x', m.l).attr('width', W - m.l - m.r).attr('y', m.t).attr('height', H - m.t - m.b).attr('fill', 'transparent')
+      .on('pointermove', (ev) => {
+        const [px] = d3.pointer(ev);
+        const d = rows[bis(rows, x.invert(px))];
+        foc.attr('display', null).attr('cx', x(d.t_min)).attr('cy', y(d.hr));
+        tip(ev, [fmtMin(d.t_min) + ' min', d.hr + ' bpm'].concat(d.pace_sec ? [fmtPace(d.pace_sec) + '/km'] : []));
+      })
+      .on('pointerleave', (ev) => { foc.attr('display', 'none'); tip(ev, null); });
+  }
+
+  function drawDetailLaps(id) {
+    const box = $('#d-lap');
+    const all = guard(box, 'run_laps');
+    if (!all) return;
+    const rows = all.filter((p) => p.run_id === id);
+    if (!rows.length) { box.replaceChildren(msg('Geen kilometertijden voor deze run.')); return; }
+    const W = Math.max(box.clientWidth, 260), rh = 36, labelW = 44, hrW = 74;
+    const H = rows.length * rh + 8;
+    const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('width', '100%');
+    const barMax = W - labelW - hrW - 56;
+    const speed = (d) => 1000 / d.pace_sec;
+    const sx = d3.scaleLinear([0, d3.max(rows, speed)], [0, barMax]);
+    rows.forEach((d, i) => {
+      const y0 = i * rh + 4;
+      svg.append('text').attr('x', 0).attr('y', y0 + 19).text('km ' + d.km);
+      svg.append('rect').attr('x', labelW).attr('y', y0 + 5).attr('width', sx(speed(d))).attr('height', 18).attr('rx', 4).style('fill', 'var(--mr-accent)');
+      svg.append('text').attr('class', 'lbl').attr('x', labelW + sx(speed(d)) + 6).attr('y', y0 + 19).text(fmtPace(d.pace_sec) + '/km');
+      svg.append('circle').attr('cx', W - hrW + 6).attr('cy', y0 + 14).attr('r', 5).style('fill', 'var(--color-' + hrCls(d.avg_hr) + ')');
+      svg.append('text').attr('x', W - hrW + 16).attr('y', y0 + 19).text(d.avg_hr + ' bpm');
+    });
+    box.replaceChildren(svg.node());
+  }
+
+  function drawWhy(id) {
+    const tb = $('#why tbody');
+    const g = dash.data('run_scores');
+    if (g.status !== 'ok') { tb.replaceChildren(); return; }
+    tb.replaceChildren(...g.data.filter((p) => p.run_id === id).map((p) => {
+      const tr = document.createElement('tr');
+      tr.dataset.key = String(p.key);
+      const a = document.createElement('td');
+      a.textContent = p.factor;
+      const b = document.createElement('td');
+      b.textContent = String(p.points);
+      b.className = 'num' + (p.points < 0 ? ' neg' : '') + (p.factor === 'Eindscore' ? ' fin' : '');
+      const c = document.createElement('td');
+      c.textContent = p.note;
+      tr.append(a, b, c);
+      return tr;
+    }));
+  }
+
+  function drawDetail() {
+    const rs = dash.data('runs');
+    if (rs.status !== 'ok') return;
+    const body = $('#d-body'), empty = $('#d-empty');
+    const id = selectedId();
+    if (!id) { body.hidden = true; empty.hidden = false; return; }
+    empty.hidden = true;
+    body.hidden = false;
+    const r = rs.data.find((x) => x.id === id);
+    [['#d-wk', 'wk'], ['#d-run', 'run'], ['#d-date', 'date'], ['#d-plan', 'plan'], ['#d-km', 'distance_km'], ['#d-min', 'minutes'],
+      ['#d-pace', 'pace'], ['#d-avg', 'avg_hr'], ['#d-max', 'max_hr'], ['#d-good', 'good'], ['#d-tip', 'tip'], ['#d-vs', 'vs_prev'], ['#d-dot', 'score']].forEach(([s, f]) => {
+      const el = $(s);
+      el.setAttribute('data-source', 'runs');
+      el.setAttribute('data-field', f);
+      el.setAttribute('data-where', 'id=' + id);
+      const v = r[f];
+      el.textContent = v == null || v === '' ? '–' : String(v);
+    });
+    $('#d-dot').className = 'dot big ' + cls(r.score);
+    document.querySelectorAll('#log tbody tr').forEach((tr) => tr.classList.toggle('sel', tr.dataset.key === id));
+    drawDetailHr(id, r);
+    drawDetailLaps(id);
+    drawWhy(id);
+  }
+
+  const vbtn = $('#vernieuw');
+  vbtn.addEventListener('click', () => {
+    vbtn.disabled = true;
+    vbtn.textContent = 'Bezig...';
+    ['runs', 'run_points', 'run_laps', 'run_scores', 'next_run', 'shoes', 'plan', 'zones'].forEach((id) => {
+      try { dash.refresh(id); } catch (e) { /* ga door */ }
+    });
+    setTimeout(() => { vbtn.disabled = false; vbtn.textContent = 'Vernieuw'; }, 2500);
+  });
+
+  dash.onData(() => {
+    fillMarks();
+    header();
+    drawSchedule();
+    drawKm();
+    drawPace();
+    fillTable('#log', 'runs', ['date', 'wk', 'run', 'plan', 'distance_km', 'minutes', 'pace', 'avg_hr', 'max_hr', 'score', 'review'], (a, b) => (a.date < b.date ? 1 : -1));
+    fillTable('#zt', 'zones', ['zone', 'bpm', 'use']);
+    drawDetail();
+    drawShoes();
+  });
+})();
+</script>
+
+</div>
+</body>
+</html>
