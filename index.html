@@ -202,6 +202,23 @@ main{padding:8px 16px calc(var(--tabh) + 24px);max-width:640px;margin:0 auto}
 .shoe .meter{height:10px;border-radius:5px;background:var(--surface-2);overflow:hidden;margin:10px 0 6px;position:relative}
 .shoe .meter i{position:absolute;inset:0 auto 0 0;background:var(--blue);border-radius:5px}
 .shoe .meter u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--warn)}
+.fc .big{font-family:var(--f-num);font-weight:800;font-size:56px;letter-spacing:-.02em;line-height:1;margin:6px 0 4px}
+.fc .range{color:var(--ink-2);font-size:15px}
+.fc .chips{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 4px}
+.fc .chip{border-radius:999px;padding:5px 10px;font-size:13px;font-weight:600;background:var(--surface-2);border:1px solid var(--line);color:var(--ink-2)}
+.fc .chip.yes{background:color-mix(in srgb,var(--ok) 14%,transparent);border-color:transparent;color:var(--ok)}
+.fc .chip.maybe{background:color-mix(in srgb,var(--warn) 16%,transparent);border-color:transparent;color:var(--warn)}
+.fc .now{display:flex;justify-content:space-between;gap:10px;background:var(--surface-2);border-radius:12px;padding:10px 12px;margin-top:10px;font-size:14px}
+.fc .now b{font-family:var(--f-num);font-weight:800}
+.fc .act{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
+.fc .act button{white-space:nowrap;flex:none;background:var(--night);color:var(--cream);font-weight:700;padding:9px 14px;border-radius:999px;font-size:14px}
+details.how{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+details.how summary{cursor:pointer;color:var(--blue);font-weight:600;font-size:14.5px;list-style:none}
+details.how summary::-webkit-details-marker{display:none}
+details.how .m{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+details.how .m:last-of-type{border-bottom:0}
+details.how .m b{font-family:var(--f-num);white-space:nowrap}
+details.how p{font-size:13.5px;color:var(--ink-2);margin:8px 0 0}
 .foot{color:var(--ink-3);font-size:12.5px;text-align:center;margin:26px 0 0}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
@@ -286,6 +303,9 @@ main{padding:8px 16px calc(var(--tabh) + 24px);max-width:640px;margin:0 auto}
 
   <!-- REKENEN -->
   <section class="view" id="v-tools" aria-label="Rekenen">
+    <div class="panel fc" id="forecast"></div>
+
+    <div class="sec"><h2>Rekenen met een doeltijd</h2></div>
     <div class="panel">
       <div style="font-weight:700">Welke marathontijd wil je lopen?</div>
       <div class="calc-big"><div class="t num" id="ct">3:45</div><div class="p" id="cp"></div></div>
@@ -336,8 +356,8 @@ main{padding:8px 16px calc(var(--tabh) + 24px);max-width:640px;margin:0 auto}
   const MON = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'];
   const DAYS = ['zo','ma','di','wo','do','vr','za'];
   const fmtDate = (s) => { const d = new Date(s + 'T12:00:00'); return DAYS[d.getDay()] + ' ' + d.getDate() + ' ' + MON[d.getMonth()]; };
-  const fmtPace = (sec) => sec == null ? '–' : Math.floor(sec / 60) + ':' + String(Math.round(sec % 60)).padStart(2, '0');
-  const fmtHM = (min) => Math.floor(min / 60) + ':' + String(Math.round(min % 60)).padStart(2, '0');
+  const fmtPace = (sec) => { if (sec == null) return '–'; const s = Math.round(sec); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+  const fmtHM = (min) => { const m = Math.round(min); return Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0'); };
   const fmtHMS = (s) => { s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
     return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
   const cls = (sc) => sc == null ? 'todo' : sc >= 8 ? 'ok' : sc >= 5 ? 'warn' : 'bad';
@@ -382,11 +402,12 @@ main{padding:8px 16px calc(var(--tabh) + 24px);max-width:640px;margin:0 auto}
     window.scrollTo(0, 0);
     if (t === 'progress') drawProgress();
     if (t === 'schedule') renderSchedule(true);
+    if (t === 'tools' && D.plan) renderForecast();
   }
   function subtitle() {
     const w = curWeek(); const p = (D.plan || []).find((x) => x.wk === w);
     const s = { today: daysLeft() + ' dagen tot 9 mei', schedule: '31 weken, van 5 okt tot 9 mei', runs: done().length + ' runs gelopen',
-      progress: p ? 'Week ' + w + ', fase ' + p.phase.toLowerCase() : '', tools: 'Doeltijd, tempo en tussentijden' }[tab];
+      progress: p ? 'Week ' + w + ', fase ' + p.phase.toLowerCase() : '', tools: 'Prognose, doeltijd en tussentijden' }[tab];
     $('#subtitle').textContent = s || ' ';
   }
   $$('.tabs button').forEach((b) => b.addEventListener('click', () => go(b.dataset.tab)));
@@ -751,6 +772,104 @@ main{padding:8px 16px calc(var(--tabh) + 24px);max-width:640px;margin:0 auto}
       const b = el('div', 'num', r.bpm); b.style.fontWeight = 800; b.style.textAlign = 'right'; b.style.flex = 'none'; row.append(sw, g, b); z.append(row); });
   }
 
+  /* ---------------- forecast ---------------- */
+  // Garmin-schatting van de loopdrempel (okt 2026); de test in week 9 vervangt deze automatisch.
+  const LT0 = { hr: 179, pace: 310, src: 'Garmin-schatting' };
+  const MP_HR = 158;
+  const lapsOf = (id) => (D.run_laps || []).filter((l) => l.run_id === id).sort((a, b) => a.km - b.km);
+  function bestBlock(laps, need, by) {
+    // snelste aaneengesloten reeks laps met minstens `need` km (by='km') of minuten (by='min')
+    let best = null;
+    for (let i = 0; i < laps.length; i++) {
+      let km = 0, sec = 0, hrw = 0;
+      for (let j = i; j < laps.length; j++) {
+        const l = laps[j]; const t = l.pace_sec * l.distance_km; km += l.distance_km; sec += t; hrw += (l.avg_hr || 0) * t;
+        if ((by === 'km' ? km : sec / 60) >= need) { const v = km / sec; if (!best || v > best.v) best = { km, sec, v, hr: hrw / sec }; break; }
+      }
+    }
+    return best;
+  }
+  function forecast(asOf) {
+    const runs = done().filter((r) => r.date <= asOf).sort((a, b) => (a.date < b.date ? -1 : 1));
+    if (!runs.length) return null;
+    const wk = Math.min(31, Math.max(1, Math.floor((new Date(asOf + 'T12:00:00') - START) / 604800000) + 1));
+    // 1. drempel: test in week 9 als die er is, anders Garmin
+    let LT = LT0;
+    const t30 = runs.filter((r) => /^test/i.test(r.plan)).pop();
+    if (t30) { const b = bestBlock(lapsOf(t30.id), 27, 'min'); if (b && b.hr) LT = { hr: Math.round(b.hr), pace: b.sec / b.km, src: '30-minutentest ' + fmtDate(t30.date) }; }
+    const tA = LT.pace * 1.10 * 42.195;
+    // 2. hartslag-tempo-lijn uit je kilometers van de laatste 6 weken + drempelpunt
+    const from = new Date(new Date(asOf + 'T12:00:00') - 42 * 864e5).toISOString().slice(0, 10);
+    const pts = [];
+    runs.filter((r) => r.date >= from).forEach((r) => lapsOf(r.id).forEach((l) => {
+      if (l.avg_hr >= 130 && l.avg_hr <= 178 && l.pace_sec >= 220 && l.pace_sec <= 560 && l.distance_km >= .5) pts.push([l.avg_hr, 1000 / l.pace_sec, l.distance_km]); }));
+    pts.push([LT.hr, 1000 / LT.pace, 4]);
+    const W = d3.sum(pts, (p) => p[2]), mx = d3.sum(pts, (p) => p[0] * p[2]) / W, my = d3.sum(pts, (p) => p[1] * p[2]) / W;
+    const sxy = d3.sum(pts, (p) => p[2] * (p[0] - mx) * (p[1] - my)), sxx = d3.sum(pts, (p) => p[2] * (p[0] - mx) ** 2);
+    const slope = sxx > 0 ? Math.max(0.005, sxy / sxx) : 0.02;
+    const vMP = my + slope * (MP_HR - mx);
+    const tB = 42195 / vMP * 1.03;
+    // 3. wedstrijd of test op afstand (10 km, halve marathon)
+    let tC = null, race = null;
+    runs.filter((r) => /10 km|halve/i.test(r.plan)).forEach((r) => {
+      const d = /halve/i.test(r.plan) ? 21.0975 : 10; const b = bestBlock(lapsOf(r.id), d - .25, 'km');
+      if (b) { const t = (b.sec / b.km) * d * Math.pow(42.195 / d, 1.06) * 1.03; if (!tC || r.date > race.date) { tC = t; race = { date: r.date, d, sec: (b.sec / b.km) * d }; } } });
+    const now = tC ? .6 * tC + .2 * tA + .2 * tB : .45 * tA + .55 * tB;
+    // 4. groei tot 9 mei als je het schema blijft volgen
+    const planned = D.plan.filter((p) => p.wk <= wk).reduce((s, p) => s + tasksOf(p).length, 0) || 1;
+    const sc = (D.runs || []).filter((r) => r.date <= asOf && r.score != null);
+    const avg = sc.length ? d3.mean(sc, (r) => r.score) : 8;
+    const adherence = Math.max(.5, Math.min(1, runs.length / planned)) * Math.max(.6, Math.min(1, avg / 9));
+    const remaining = Math.max(0, (31 - wk) / 30);
+    const gain = .10 * remaining * adherence;
+    const raceT = now / (1 + gain);
+    const spread = .03 + .05 * remaining - (tC ? .015 : 0);
+    return { now, race: raceT, lo: raceT * (1 - spread), hi: raceT * (1 + spread), tA, tB, tC, LT, race_: race, gain, adherence, n: runs.length, laps: pts.length - 1, wk };
+  }
+  const hm = (s) => fmtHM(s / 60);
+  function renderForecast() {
+    const box = $('#forecast'); box.replaceChildren();
+    const today = new Date().toISOString().slice(0, 10);
+    const f = forecast(today);
+    if (!f) { box.append(el('div', '', 'Na je eerste runs verschijnt hier een prognose van je finishtijd.')); return; }
+    const t = el('div', '', 'Prognose voor 9 mei'); t.style.fontWeight = '700'; box.append(t);
+    box.append(el('div', 'big', hm(f.race)));
+    box.append(el('div', 'range', 'Waarschijnlijk tussen ' + hm(f.lo) + ' en ' + hm(f.hi) + ', als je het schema blijft volgen.'));
+    const chips = el('div', 'chips');
+    const c4 = f.race < 240 * 60 ? (f.hi < 240 * 60 ? ['yes', 'Onder 4 uur: op koers'] : ['maybe', 'Onder 4 uur: haalbaar']) : (f.lo < 240 * 60 ? ['maybe', 'Onder 4 uur: net binnen bereik'] : ['', 'Onder 4 uur: nog een stap te gaan']);
+    const c35 = f.lo < 210 * 60 ? (f.race < 210 * 60 ? ['yes', '3:30: op koers'] : ['maybe', '3:30: alleen als alles meezit']) : ['', '3:30: nu nog buiten bereik'];
+    [c4, c35].forEach(([k, s]) => chips.append(el('span', 'chip ' + k, s))); box.append(chips);
+    const now = el('div', 'now'); now.append(el('span', 'muted', 'Met je vorm van vandaag'), el('b', '', hm(f.now))); box.append(now);
+    // verloop
+    const hist = [];
+    D.plan.filter((p) => p.wk <= f.wk).forEach((p) => { const end = new Date(new Date(p.monday + 'T12:00:00').getTime() + 6 * 864e5).toISOString().slice(0, 10);
+      const x = forecast(end < today ? end : today); if (x) hist.push({ wk: p.wk, t: x.race }); });
+    if (hist.length > 1) {
+      const c = el('div', 'chart'); c.style.marginTop = '10px'; box.append(c);
+      requestAnimationFrame(() => { const W = c.clientWidth || 320, H = 110, m = { l: 34, r: 6, t: 8, b: 18 };
+        const x = d3.scaleLinear().domain([1, 31]).range([m.l, W - m.r]);
+        const y = d3.scaleLinear().domain([Math.min(205 * 60, d3.min(hist, (h) => h.t) - 300), Math.max(250 * 60, d3.max(hist, (h) => h.t) + 300)]).range([H - m.b, m.t]);
+        const svg = d3.select(c).append('svg').attr('viewBox', `0 0 ${W} ${H}`);
+        [[240, '4:00'], [210, '3:30']].forEach(([v, l]) => { svg.append('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y(v * 60)).attr('y2', y(v * 60)).attr('stroke', 'var(--line)').attr('stroke-dasharray', '4 4');
+          svg.append('text').attr('x', m.l - 6).attr('y', y(v * 60) + 4).attr('text-anchor', 'end').text(l); });
+        svg.append('path').datum(hist).attr('fill', 'none').attr('stroke', 'var(--blue)').attr('stroke-width', 2.2).attr('d', d3.line().x((h) => x(h.wk)).y((h) => y(h.t)));
+        svg.selectAll('circle').data(hist).join('circle').attr('cx', (h) => x(h.wk)).attr('cy', (h) => y(h.t)).attr('r', 3.5).attr('fill', 'var(--blue)');
+        svg.append('text').attr('x', W - m.r).attr('y', H - 4).attr('text-anchor', 'end').text('prognose per week'); });
+    }
+    const act = el('div', 'act'); act.append(el('span', 'muted small', 'Op basis van ' + f.n + (f.n === 1 ? ' run' : ' runs') + ' en ' + f.laps + ' kilometers'));
+    const use = el('button', '', 'Gebruik als doel'); use.addEventListener('click', () => { sl.value = Math.round(f.race / 60); calc(); $('#cslider').scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+    act.append(use); box.append(act);
+    const det = el('details', 'how'); det.append(el('summary', '', 'Hoe ik dit bereken'));
+    const mrow = (a, b) => { const r = el('div', 'm'); r.append(el('span', '', a), el('b', '', b)); det.append(r); };
+    mrow('Drempel (' + f.LT.src + ': ' + f.LT.hr + ' bpm, ' + fmtPace(f.LT.pace) + '/km) + 10%', hm(f.tA));
+    mrow('Jouw hartslag-tempolijn, doorgetrokken naar ' + MP_HR + ' bpm', hm(f.tB));
+    mrow(f.tC ? 'Wedstrijd ' + (f.race_.d > 15 ? 'halve marathon' : '10 km') + ' (' + fmtDate(f.race_.date) + ') omgerekend' : 'Wedstrijdtijd (10 km of halve)', f.tC ? hm(f.tC) : 'nog niet');
+    mrow('Vorm van vandaag (gewogen)', hm(f.now));
+    mrow('Verwachte groei tot 9 mei', '+' + Math.round(f.gain * 100) + '% snelheid');
+    det.append(el('p', '', 'De groei hangt af van hoeveel weken er nog zijn en hoe trouw en goed je je runs doet (nu ' + Math.round(f.adherence * 100) + '%). Bij je eerste marathon reken ik 3% extra voor vermoeidheid in de laatste 10 km. De prognose wordt elke run scherper, en vooral na de test in week 9, de 10 km in week 16 en de 20 van Alphen.'));
+    box.append(det);
+  }
+
   /* ---------------- tools ---------------- */
   const sl = $('#cslider');
   sl.value = store.get('goal', 225);
@@ -777,7 +896,7 @@ main{padding:8px 16px calc(var(--tabh) + 24px);max-width:640px;margin:0 auto}
   /* ---------------- render ---------------- */
   function render() {
     if (!D.plan || !D.plan.length) return;
-    renderToday(); renderSchedule(false); renderRuns(); renderShoesZones(); subtitle();
+    renderToday(); renderSchedule(false); renderRuns(); renderShoesZones(); renderForecast(); subtitle();
     if (tab === 'progress') drawProgress();
   }
   let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (tab === 'progress') drawProgress(); drawRoute(); }, 150); });
